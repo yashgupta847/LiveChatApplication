@@ -18,16 +18,14 @@ function generateChatId() {
     
     // Join the chat room with the generated ID
     socket.emit('join-room', chatId);
-    
-    // Set up socket event listeners
-    setupSocketListeners();
+    console.log("Created room with ID:", chatId);
 }
 
 // Copy chat ID to clipboard
 function copyChatId() {
     const chatId = document.getElementById('yourChatId').textContent;
     navigator.clipboard.writeText(chatId).then(() => {
-        alert('Chat ID copied to clipboard!');
+        showAlert('Chat ID copied to clipboard!', 'success');
     });
 }
 
@@ -36,36 +34,28 @@ function joinChat() {
     const chatId = document.getElementById('chatIdInput').value.trim().toUpperCase();
     
     if (!chatId) {
-        showAlert('Please enter a chat ID');
+        showAlert('Please enter a chat ID', 'error');
         return;
     }
     
-    // Check if the entered ID exists in active rooms
-    socket.emit('check-room-exists', chatId, (exists) => {
-        if (exists) {
-            // Valid room ID, proceed to join
-            if (currentChatId) {
-                socket.emit('leave-room', currentChatId);
-            }
-            
-            // Join new room
-            currentChatId = chatId;
-            socket.emit('join-room', chatId);
-            
-            // Update UI
-            document.getElementById('yourChatId').textContent = chatId;
-            addMessageToUI(`Joined chat room: ${chatId}`);
-        } else {
-            // Invalid room ID
-            showAlert('Invalid meeting ID. Please enter a valid ID.');
-        }
-    });
+    console.log("Trying to join room:", chatId);
+    
+    // Always allow joining any room, no checking required
+    if (currentChatId) {
+        socket.emit('leave-room', currentChatId);
+    }
+    
+    // Join new room
+    currentChatId = chatId;
+    document.getElementById('yourChatId').textContent = chatId;
+    socket.emit('join-room', chatId);
+    addMessageToUI(`Joined chat room: ${chatId}`);
 }
 
 // Show an alert message
-function showAlert(message) {
+function showAlert(message, type = 'info') {
     const alertBox = document.createElement('div');
-    alertBox.className = 'alert-box';
+    alertBox.className = `alert-box ${type}`;
     alertBox.textContent = message;
     
     document.body.appendChild(alertBox);
@@ -82,30 +72,37 @@ function showAlert(message) {
 // Set up socket event listeners
 function setupSocketListeners() {
     socket.on('user-joined', (data) => {
+        console.log("User joined event received:", data);
         addMessageToUI('A user joined the chat');
+        
+        // Show popup notification
+        showAlert('A user has connected to your chat!', 'success');
     });
 
     socket.on('user-left', (data) => {
+        console.log("User left event received:", data);
         addMessageToUI('A user left the chat');
     });
 
     socket.on('receive-message', (data) => {
+        console.log("Message received:", data);
         addMessageToUI(data.message, false);
     });
 }
 
 // Send message
 function sendMessage() {
-    const message = document.getElementById('messageInput').value.trim();
+    const message = messageInput.value.trim();
     if (!message || !currentChatId) return;
 
+    console.log("Sending message to room:", currentChatId);
     socket.emit('send-message', {
         message,
         roomId: currentChatId
     });
 
     addMessageToUI(message, true);
-    document.getElementById('messageInput').value = '';
+    messageInput.value = '';
 }
 
 // Add message to UI
@@ -119,7 +116,7 @@ function addMessageToUI(message, isOwnMessage = false) {
 }
 
 // Handle Enter key in message input
-document.getElementById('messageInput').addEventListener('keypress', (e) => {
+messageInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         sendMessage();
     }
@@ -194,4 +191,12 @@ socket.on("update_users", (usernames) => {
     li.textContent = `🟢 ${name}`;
     onlineUsersList.appendChild(li);
   });
+});
+
+// Add event listeners after the page loads
+window.addEventListener('load', function() {
+    // Make sure we're connected to socket.io
+    if (!socket.connected) {
+        socket.connect();
+    }
 });

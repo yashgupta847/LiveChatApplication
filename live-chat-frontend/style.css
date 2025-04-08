@@ -204,16 +204,34 @@ body {
     top: 20px;
     left: 50%;
     transform: translateX(-50%);
-    background: linear-gradient(135deg, #ff3a3a, #ff006f);
-    color: white;
     padding: 15px 25px;
     border-radius: 10px;
     font-weight: 500;
-    box-shadow: 0 5px 20px rgba(255, 0, 111, 0.4);
     z-index: 1000;
     animation: slide-in 0.3s ease;
     text-align: center;
     min-width: 280px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  }
+  
+  .alert-box.info {
+    background: linear-gradient(135deg, #2196F3, #0D47A1);
+    color: white;
+  }
+  
+  .alert-box.success {
+    background: linear-gradient(135deg, #4CAF50, #1B5E20);
+    color: white;
+  }
+  
+  .alert-box.error {
+    background: linear-gradient(135deg, #FF5252, #D50000);
+    color: white;
+  }
+  
+  .alert-box.warning {
+    background: linear-gradient(135deg, #FFC107, #FF6F00);
+    color: white;
   }
   
   .alert-box.fade-out {

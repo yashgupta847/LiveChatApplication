@@ -30,17 +30,16 @@ const activeRooms = new Map();
 io.on("connection", (socket) => {
   console.log(`✅ User connected: ${socket.id}`);
 
-  // Check if a room exists
+  // No need to check if room exists anymore - we'll allow any room ID
   socket.on("check-room-exists", (roomId, callback) => {
-    // Room exists if:
-    // 1. It's the room created by the user (currentRoomId matches)
-    // 2. It exists in activeRooms
-    const roomExists = activeRooms.has(roomId);
-    callback(roomExists);
+    // Always return true to allow joining any room
+    callback(true);
   });
 
   // Join room
   socket.on("join-room", (roomId) => {
+    console.log(`User ${socket.id} trying to join room ${roomId}`);
+    
     // Leave previous room if any
     if (socket.roomId) {
       leaveRoom(socket);
@@ -63,6 +62,7 @@ io.on("connection", (socket) => {
     
     console.log(`User ${socket.id} joined room ${roomId}`);
     console.log(`Active rooms: ${Array.from(activeRooms.keys()).join(', ')}`);
+    console.log(`Users in room ${roomId}: ${activeRooms.get(roomId).size}`);
   });
   
   // Leave room
