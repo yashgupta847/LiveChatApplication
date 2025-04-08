@@ -277,3 +277,53 @@ body {
     white-space: nowrap;
   }
   
+  .message {
+    margin: 10px 0;
+    padding: 12px;
+    border-radius: 12px;
+    max-width: 80%;
+    position: relative;
+    word-wrap: break-word;
+  }
+  
+  .own-message {
+    background: linear-gradient(135deg, #a100ff, #6f00ff);
+    color: white;
+    margin-left: auto;
+    border-bottom-right-radius: 0;
+  }
+  
+  .other-message {
+    background-color: #292949;
+    color: #f0f0f0;
+    margin-right: auto;
+    border-bottom-left-radius: 0;
+  }
+  
+  .message-sender {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: bold;
+    margin-bottom: 4px;
+  }
+  
+  .message-content {
+    display: block;
+  }
+  
+  .message-time {
+    display: block;
+    font-size: 0.7rem;
+    opacity: 0.7;
+    text-align: right;
+    margin-top: 4px;
+  }
+  
+  .system-message {
+    text-align: center;
+    font-style: italic;
+    color: #aaa;
+    margin: 8px 0;
+    font-size: 0.9rem;
+  }
+  

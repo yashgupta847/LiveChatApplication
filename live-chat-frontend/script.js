@@ -5,10 +5,22 @@ let username = null;
 // DOM elements
 const typingStatus = document.getElementById("typingStatus");
 const messageInput = document.getElementById("messageInput");
-const messages = document.getElementById("messages");
+const messagesDiv = document.getElementById("messages");
 const onlineUsersList = document.getElementById("onlineUsers");
 
 let typingTimeout;
+
+// Ask username on load
+window.onload = function() {
+    generateChatId();
+    askUsername();
+};
+
+// Ask for username
+function askUsername() {
+    username = prompt("Enter your name:") || "Anonymous";
+    socket.emit("set_username", { username, roomId: currentChatId });
+}
 
 // Generate a random chat ID
 function generateChatId() {
@@ -17,7 +29,7 @@ function generateChatId() {
     currentChatId = chatId;
     
     // Join the chat room with the generated ID
-    socket.emit('join-room', chatId);
+    socket.emit('join-room', { roomId: chatId, username });
     console.log("Created room with ID:", chatId);
 }
 
@@ -40,16 +52,16 @@ function joinChat() {
     
     console.log("Trying to join room:", chatId);
     
-    // Always allow joining any room, no checking required
+    // Leave current room if exists
     if (currentChatId) {
-        socket.emit('leave-room', currentChatId);
+        socket.emit('leave-room', { roomId: currentChatId });
     }
     
     // Join new room
     currentChatId = chatId;
     document.getElementById('yourChatId').textContent = chatId;
-    socket.emit('join-room', chatId);
-    addMessageToUI(`Joined chat room: ${chatId}`);
+    socket.emit('join-room', { roomId: chatId, username });
+    addSystemMessage(`You joined chat room: ${chatId}`);
 }
 
 // Show an alert message
@@ -69,51 +81,70 @@ function showAlert(message, type = 'info') {
     }, 3000);
 }
 
-// Set up socket event listeners
-function setupSocketListeners() {
-    socket.on('user-joined', (data) => {
-        console.log("User joined event received:", data);
-        addMessageToUI('A user joined the chat');
-        
-        // Show popup notification
-        showAlert('A user has connected to your chat!', 'success');
-    });
-
-    socket.on('user-left', (data) => {
-        console.log("User left event received:", data);
-        addMessageToUI('A user left the chat');
-    });
-
-    socket.on('receive-message', (data) => {
-        console.log("Message received:", data);
-        addMessageToUI(data.message, false);
-    });
-}
-
 // Send message
 function sendMessage() {
     const message = messageInput.value.trim();
     if (!message || !currentChatId) return;
 
     console.log("Sending message to room:", currentChatId);
-    socket.emit('send-message', {
+    
+    const messageData = {
         message,
-        roomId: currentChatId
-    });
+        roomId: currentChatId,
+        username,
+        time: new Date().toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit"
+        })
+    };
+    
+    socket.emit('send-message', messageData);
 
-    addMessageToUI(message, true);
+    // Add own message to UI
+    addMessageToUI(message, true, username, messageData.time);
     messageInput.value = '';
 }
 
 // Add message to UI
-function addMessageToUI(message, isOwnMessage = false) {
-    const messagesDiv = document.getElementById('messages');
+function addMessageToUI(message, isOwnMessage = false, user = 'Unknown', time = '') {
     const messageElement = document.createElement('div');
     messageElement.className = `message ${isOwnMessage ? 'own-message' : 'other-message'}`;
+    
+    const timeDisplay = time || new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+    });
+    
+    messageElement.innerHTML = `
+        <span class="message-sender">${isOwnMessage ? 'You' : user}</span>
+        <span class="message-content">${message}</span>
+        <span class="message-time">${timeDisplay}</span>
+    `;
+    
+    messagesDiv.appendChild(messageElement);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+// Add system message to UI
+function addSystemMessage(message) {
+    const messageElement = document.createElement('div');
+    messageElement.className = 'system-message';
     messageElement.textContent = message;
     messagesDiv.appendChild(messageElement);
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
+
+// Handle typing
+messageInput.addEventListener("input", () => {
+    if (currentChatId) {
+        socket.emit("typing", { username, roomId: currentChatId });
+
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+            socket.emit("stop_typing", { username, roomId: currentChatId });
+        }, 1000); // 1s idle = stop typing
+    }
+});
 
 // Handle Enter key in message input
 messageInput.addEventListener('keypress', (e) => {
@@ -122,76 +153,54 @@ messageInput.addEventListener('keypress', (e) => {
     }
 });
 
-// ⌨️ Handle typing
-messageInput.addEventListener("input", () => {
-  socket.emit("typing", username);
-
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    socket.emit("stop_typing", username);
-  }, 1000); // 1s idle = stop typing
+// Set up socket event listeners
+socket.on('user-joined', (data) => {
+    console.log("User joined event received:", data);
+    addSystemMessage(`${data.username || 'A user'} joined the chat`);
+    updateOnlineUsers(data.users);
+    
+    // Show popup notification
+    showAlert(`${data.username || 'A user'} has connected to your chat!`, 'success');
 });
 
-// 🎧 Socket events
-socket.on("receive_message", (data) => {
-  const messageElement = document.createElement("div");
-  const time = new Date().toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-  messageElement.textContent = `[${data.user} • ${time}]: ${data.message}`;
-  messages.appendChild(messageElement);
-  messages.scrollTop = messages.scrollHeight;
+socket.on('user-left', (data) => {
+    console.log("User left event received:", data);
+    addSystemMessage(`${data.username || 'A user'} left the chat`);
+    updateOnlineUsers(data.users);
 });
 
-socket.on("typing", (name) => {
-  if (name !== username) {
-    typingStatus.textContent = `${name} is typing...`;
-  }
+socket.on('receive-message', (data) => {
+    console.log("Message received:", data);
+    addMessageToUI(data.message, false, data.username, data.time);
 });
 
-socket.on("stop_typing", (name) => {
-  if (name !== username) {
-    typingStatus.textContent = "";
-  }
+socket.on('typing', (data) => {
+    if (data.username !== username) {
+        typingStatus.textContent = `${data.username} is typing...`;
+    }
 });
 
-socket.on("user_joined", (name) => {
-  const info = document.createElement("div");
-  info.textContent = `🔔 ${name} joined the chat`;
-  info.style.fontStyle = "italic";
-  info.style.color = "lightgray";
-  messages.appendChild(info);
-  messages.scrollTop = messages.scrollHeight;
+socket.on('stop_typing', (data) => {
+    if (data.username !== username) {
+        typingStatus.textContent = "";
+    }
 });
 
-socket.on("user_left", (name) => {
-  const info = document.createElement("div");
-  info.textContent = `❌ ${name} left the chat`;
-  info.style.fontStyle = "italic";
-  info.style.color = "lightgray";
-  messages.appendChild(info);
-  messages.scrollTop = messages.scrollHeight;
+socket.on('online_users', (users) => {
+    updateOnlineUsers(users);
 });
 
-// 🟢 Online Users List
-socket.on("online_users", (usernames) => {
-  onlineUsersList.innerHTML = "";
-  usernames.forEach((name) => {
-    const li = document.createElement("li");
-    li.textContent = `🟢 ${name}`;
-    onlineUsersList.appendChild(li);
-  });
-});
-
-socket.on("update_users", (usernames) => {
-  onlineUsersList.innerHTML = "";
-  usernames.forEach((name) => {
-    const li = document.createElement("li");
-    li.textContent = `🟢 ${name}`;
-    onlineUsersList.appendChild(li);
-  });
-});
+// Update online users list
+function updateOnlineUsers(users) {
+    if (!users || !Array.isArray(users)) return;
+    
+    onlineUsersList.innerHTML = "";
+    users.forEach((user) => {
+        const li = document.createElement("li");
+        li.textContent = `🟢 ${user}`;
+        onlineUsersList.appendChild(li);
+    });
+}
 
 // Add event listeners after the page loads
 window.addEventListener('load', function() {

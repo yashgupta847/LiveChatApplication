@@ -26,19 +26,39 @@ const io = new Server(server, {
 
 // Store active rooms and their users
 const activeRooms = new Map();
+// Store usernames mapped to socket ids
+const usernames = new Map(); // socketId -> username
 
 io.on("connection", (socket) => {
   console.log(`✅ User connected: ${socket.id}`);
 
-  // No need to check if room exists anymore - we'll allow any room ID
+  // Set username
+  socket.on("set_username", (data) => {
+    const { username, roomId } = data;
+    usernames.set(socket.id, username);
+    console.log(`User ${socket.id} set username to: ${username}`);
+    
+    // Update users in room if already in a room
+    if (roomId && activeRooms.has(roomId)) {
+      const usersInRoom = Array.from(activeRooms.get(roomId)).map(id => usernames.get(id) || "Anonymous");
+      io.to(roomId).emit("online_users", usersInRoom);
+    }
+  });
+
+  // Always return true to allow joining any room
   socket.on("check-room-exists", (roomId, callback) => {
-    // Always return true to allow joining any room
     callback(true);
   });
 
   // Join room
-  socket.on("join-room", (roomId) => {
+  socket.on("join-room", (data) => {
+    const { roomId, username } = data;
     console.log(`User ${socket.id} trying to join room ${roomId}`);
+    
+    // Set username if provided
+    if (username) {
+      usernames.set(socket.id, username);
+    }
     
     // Leave previous room if any
     if (socket.roomId) {
@@ -57,8 +77,18 @@ io.on("connection", (socket) => {
     // Add user to room
     activeRooms.get(roomId).add(socket.id);
     
+    // Get all usernames in this room
+    const usersInRoom = Array.from(activeRooms.get(roomId)).map(id => usernames.get(id) || "Anonymous");
+    
     // Notify room members
-    socket.to(roomId).emit("user-joined", { roomId });
+    socket.to(roomId).emit("user-joined", { 
+      roomId,
+      username: usernames.get(socket.id) || "Anonymous",
+      users: usersInRoom
+    });
+    
+    // Send back room info and user list
+    socket.emit("online_users", usersInRoom);
     
     console.log(`User ${socket.id} joined room ${roomId}`);
     console.log(`Active rooms: ${Array.from(activeRooms.keys()).join(', ')}`);
@@ -66,43 +96,53 @@ io.on("connection", (socket) => {
   });
   
   // Leave room
-  socket.on("leave-room", (roomId) => {
-    leaveRoom(socket);
+  socket.on("leave-room", (data) => {
+    const { roomId } = data;
+    leaveRoom(socket, roomId);
   });
   
   // Send message in room
   socket.on("send-message", (data) => {
-    const { message, roomId } = data;
+    const { message, roomId, username, time } = data;
     
     // Send to all in room except sender
     socket.to(roomId).emit("receive-message", {
       message,
-      senderId: socket.id
+      senderId: socket.id,
+      username: username || usernames.get(socket.id) || "Anonymous",
+      time
     });
   });
   
   // Handle typing
-  socket.on("typing", (username) => {
-    if (socket.roomId) {
-      socket.to(socket.roomId).emit("typing", username);
+  socket.on("typing", (data) => {
+    const { username, roomId } = data;
+    if (roomId) {
+      socket.to(roomId).emit("typing", {
+        username: username || usernames.get(socket.id) || "Anonymous"
+      });
     }
   });
   
-  socket.on("stop_typing", (username) => {
-    if (socket.roomId) {
-      socket.to(socket.roomId).emit("stop_typing", username);
+  socket.on("stop_typing", (data) => {
+    const { username, roomId } = data;
+    if (roomId) {
+      socket.to(roomId).emit("stop_typing", {
+        username: username || usernames.get(socket.id) || "Anonymous"
+      });
     }
   });
   
   // Disconnect
   socket.on("disconnect", () => {
     leaveRoom(socket);
+    usernames.delete(socket.id);
     console.log(`❌ User disconnected: ${socket.id}`);
   });
   
   // Helper function to leave a room
-  function leaveRoom(socket) {
-    const roomId = socket.roomId;
+  function leaveRoom(socket, specificRoomId = null) {
+    const roomId = specificRoomId || socket.roomId;
     if (roomId) {
       socket.leave(roomId);
       
@@ -110,19 +150,31 @@ io.on("connection", (socket) => {
         const room = activeRooms.get(roomId);
         room.delete(socket.id);
         
+        // Get remaining users in room
+        const usersInRoom = Array.from(room).map(id => usernames.get(id) || "Anonymous");
+        
         // If room is empty, remove it
         if (room.size === 0) {
           activeRooms.delete(roomId);
+        } else {
+          // Notify others in room
+          socket.to(roomId).emit("user-left", { 
+            roomId,
+            username: usernames.get(socket.id) || "Anonymous",
+            users: usersInRoom
+          });
+          
+          // Update online users list for remaining users
+          io.to(roomId).emit("online_users", usersInRoom);
         }
-        
-        // Notify others in room
-        socket.to(roomId).emit("user-left", { roomId });
         
         console.log(`User ${socket.id} left room ${roomId}`);
         console.log(`Active rooms: ${Array.from(activeRooms.keys()).join(', ')}`);
       }
       
-      socket.roomId = null;
+      if (roomId === socket.roomId) {
+        socket.roomId = null;
+      }
     }
   }
 });
