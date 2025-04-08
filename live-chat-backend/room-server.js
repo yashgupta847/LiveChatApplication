@@ -1,3 +1,6 @@
+// Load environment variables
+require('dotenv').config();
+
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
@@ -5,7 +8,9 @@ const { Server } = require("socket.io");
 const path = require("path");
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN || "*"
+}));
 
 // Serve static files from the frontend folder
 app.use(express.static(path.join(__dirname, '../live-chat-frontend')));
@@ -14,7 +19,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: process.env.CORS_ORIGIN || "*",
     methods: ["GET", "POST"],
   },
 });
@@ -129,4 +134,5 @@ app.get("/", (req, res) => {
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🌐 Server is running on http://localhost:${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV}`);
 }); 
