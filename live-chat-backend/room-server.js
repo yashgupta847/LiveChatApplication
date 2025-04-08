@@ -25,8 +25,10 @@ const io = new Server(server, {
   },
   pingTimeout: 60000,
   pingInterval: 25000,
-  transports: ['websocket', 'polling'],
-  allowEIO3: true
+  transports: ['polling', 'websocket'],
+  upgrade: false,
+  allowEIO3: true,
+  maxHttpBufferSize: 1e8
 });
 
 // Store active rooms and their users

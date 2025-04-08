@@ -1,11 +1,53 @@
+// Start outside document.ready to check for WebSocket support early
+(function checkWebSocketSupport() {
+    // Check if WebSockets are supported at all
+    if (!window.WebSocket) {
+        console.warn("WebSockets are not supported in this browser");
+        // We'll use polling automatically
+        window.websocketsBlocked = true;
+        return;
+    }
+    
+    // Try to detect proxy or firewall issues
+    try {
+        const wsCheck = new WebSocket('wss://echo.websocket.org');
+        let wsOpened = false;
+        
+        wsCheck.onopen = function() {
+            console.log("WebSockets are working properly");
+            wsOpened = true;
+            wsCheck.close();
+        };
+        
+        wsCheck.onerror = function() {
+            console.warn("WebSockets might be blocked by a proxy or firewall");
+            window.websocketsBlocked = true;
+        };
+        
+        // If we don't get a connection in 5 seconds, assume WebSockets are blocked
+        setTimeout(function() {
+            if (!wsOpened) {
+                console.warn("WebSocket test timed out, possibly blocked");
+                window.websocketsBlocked = true;
+            }
+        }, 5000);
+    } catch (e) {
+        console.error("Error checking WebSocket support:", e);
+        window.websocketsBlocked = true;
+    }
+})();
+
+// Modified connection to prioritize polling when WebSocket fails
 let socket = io.connect(window.location.origin, {
     reconnection: true,
-    reconnectionAttempts: 5,
+    reconnectionAttempts: 10,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     timeout: 20000,
-    transports: ['websocket', 'polling']
+    transports: ['polling', 'websocket'], // Try polling first, then websocket
+    upgrade: false // Don't try to upgrade to WebSocket if polling succeeds
 });
+
 let currentChatId = null;
 let username = null;
 
@@ -21,9 +63,25 @@ let typingTimeout;
 document.addEventListener('DOMContentLoaded', function() {
     console.log("DOM loaded, initializing chat application");
     
+    // If WebSockets are detected as blocked, update the connection options
+    if (window.websocketsBlocked) {
+        console.log("WebSockets detected as blocked, using polling only");
+        socket.io.opts.transports = ['polling'];
+        showAlert("Using alternative connection method due to network configuration", "info");
+    }
+    
     // Set up connection status handlers
     socket.on('connect', function() {
         console.log("Socket connected successfully with ID:", socket.id);
+        if (socket.io && socket.io.engine && socket.io.engine.transport) {
+            console.log("Transport used:", socket.io.engine.transport.name);
+            
+            // Log when transport changes
+            socket.io.engine.on("upgrade", function(transport) {
+                console.log("Transport upgraded to:", transport.name);
+            });
+        }
+        
         showAlert("Connected to server!", "success");
         
         // Initialize after connection
@@ -37,15 +95,35 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
+    // Handle specific WebSocket errors
+    if (socket.io && socket.io.engine) {
+        socket.io.engine.on("transport_error", function(error, transport) {
+            console.error(`Transport ${transport.name} error:`, error);
+            
+            // If WebSocket fails, switch to polling only
+            if (transport.name === 'websocket') {
+                console.log("WebSocket errored, switching to polling only");
+                socket.io.opts.transports = ['polling'];
+                showAlert("WebSocket connection failed, using alternative method", "warning");
+            }
+        });
+    }
+    
     socket.on('connect_error', function(error) {
         console.error("Connection error:", error);
         showAlert("Connection error: " + error.message, "error");
+        
+        // Try to disable WebSockets on error
+        console.log("Attempting to use polling only due to error");
+        if (socket.io && socket.io.opts) {
+            socket.io.opts.transports = ['polling'];
+        }
         
         // Attempt to reconnect after a delay
         setTimeout(() => {
             console.log("Attempting to reconnect...");
             socket.connect();
-        }, 5000);
+        }, 3000);
     });
     
     socket.on('disconnect', function(reason) {
