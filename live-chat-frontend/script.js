@@ -1,4 +1,4 @@
-let socket = io(); // This will automatically connect to the host server
+let socket = io.connect(window.location.origin);
 let currentChatId = null;
 let username = null;
 
@@ -10,16 +10,41 @@ const onlineUsersList = document.getElementById("onlineUsers");
 
 let typingTimeout;
 
-// Ask username on load
-window.onload = function() {
-    generateChatId();
-    askUsername();
-};
+// Initialize chat when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    console.log("DOM loaded, initializing chat application");
+    // First confirm the Socket.IO connection
+    if (!socket.connected) {
+        console.log("Socket not connected, attempting to connect...");
+        socket.connect();
+    }
+    
+    // Set up connection status handlers
+    socket.on('connect', function() {
+        console.log("Socket connected successfully with ID:", socket.id);
+        showAlert("Connected to server!", "success");
+        
+        // Initialize after connection
+        generateChatId();
+        askUsername();
+    });
+    
+    socket.on('connect_error', function(error) {
+        console.error("Connection error:", error);
+        showAlert("Connection error: " + error.message, "error");
+    });
+    
+    socket.on('disconnect', function() {
+        console.log("Disconnected from server");
+        showAlert("Disconnected from server", "error");
+    });
+});
 
-// Ask for username
+// Ask for username - now used by the DOMContentLoaded event
 function askUsername() {
     username = prompt("Enter your name:") || "Anonymous";
     socket.emit("set_username", { username, roomId: currentChatId });
+    console.log("👤 Username set to:", username);
 }
 
 // Generate a random chat ID
@@ -30,7 +55,11 @@ function generateChatId() {
     
     // Join the chat room with the generated ID
     socket.emit('join-room', { roomId: chatId, username });
-    console.log("Created room with ID:", chatId);
+    console.log("🏠 Created room with ID:", chatId);
+    
+    // Add welcome message
+    addSystemMessage(`You created chat room: ${chatId}`);
+    showAlert('Chat room created! Share the ID to start chatting', 'success');
 }
 
 // Copy chat ID to clipboard
@@ -50,7 +79,7 @@ function joinChat() {
         return;
     }
     
-    console.log("Trying to join room:", chatId);
+    console.log("🔍 Trying to join room:", chatId);
     
     // Leave current room if exists
     if (currentChatId) {
@@ -61,7 +90,11 @@ function joinChat() {
     currentChatId = chatId;
     document.getElementById('yourChatId').textContent = chatId;
     socket.emit('join-room', { roomId: chatId, username });
+    
+    // Clear previous messages
+    messagesDiv.innerHTML = '';
     addSystemMessage(`You joined chat room: ${chatId}`);
+    showAlert(`Joined chat room: ${chatId}`, 'success');
 }
 
 // Show an alert message
@@ -86,7 +119,7 @@ function sendMessage() {
     const message = messageInput.value.trim();
     if (!message || !currentChatId) return;
 
-    console.log("Sending message to room:", currentChatId);
+    console.log("📤 Sending message to room:", currentChatId);
     
     const messageData = {
         message,
@@ -98,10 +131,11 @@ function sendMessage() {
         })
     };
     
+    // Since we're now broadcasting to all including sender,
+    // we don't need to manually add our own message
     socket.emit('send-message', messageData);
-
-    // Add own message to UI
-    addMessageToUI(message, true, username, messageData.time);
+    
+    // Clear input field
     messageInput.value = '';
 }
 
@@ -153,9 +187,9 @@ messageInput.addEventListener('keypress', (e) => {
     }
 });
 
-// Set up socket event listeners
-socket.on('user-joined', (data) => {
-    console.log("User joined event received:", data);
+// Set up socket event listeners - ensuring they are correctly bound
+socket.on('user-joined', function(data) {
+    console.log("📣 User joined event received:", data);
     addSystemMessage(`${data.username || 'A user'} joined the chat`);
     updateOnlineUsers(data.users);
     
@@ -163,30 +197,44 @@ socket.on('user-joined', (data) => {
     showAlert(`${data.username || 'A user'} has connected to your chat!`, 'success');
 });
 
-socket.on('user-left', (data) => {
-    console.log("User left event received:", data);
+socket.on('user-left', function(data) {
+    console.log("📣 User left event received:", data);
     addSystemMessage(`${data.username || 'A user'} left the chat`);
     updateOnlineUsers(data.users);
 });
 
-socket.on('receive-message', (data) => {
-    console.log("Message received:", data);
-    addMessageToUI(data.message, false, data.username, data.time);
+// Receive message handler - now handles both our own and others' messages
+socket.on('receive-message', function(data) {
+    console.log("📣 Message received:", data);
+    
+    // Check if this message is from current user
+    const isOwnMessage = data.senderId === socket.id;
+    
+    // Add message to UI with appropriate styling
+    addMessageToUI(
+        data.message, 
+        isOwnMessage, 
+        isOwnMessage ? 'You' : data.username, 
+        data.time
+    );
 });
 
-socket.on('typing', (data) => {
+socket.on('typing', function(data) {
+    console.log("📣 Typing event received:", data);
     if (data.username !== username) {
         typingStatus.textContent = `${data.username} is typing...`;
     }
 });
 
-socket.on('stop_typing', (data) => {
+socket.on('stop_typing', function(data) {
+    console.log("📣 Stop typing event received:", data);
     if (data.username !== username) {
         typingStatus.textContent = "";
     }
 });
 
-socket.on('online_users', (users) => {
+socket.on('online_users', function(users) {
+    console.log("📣 Online users list received:", users);
     updateOnlineUsers(users);
 });
 
@@ -201,11 +249,3 @@ function updateOnlineUsers(users) {
         onlineUsersList.appendChild(li);
     });
 }
-
-// Add event listeners after the page loads
-window.addEventListener('load', function() {
-    // Make sure we're connected to socket.io
-    if (!socket.connected) {
-        socket.connect();
-    }
-});

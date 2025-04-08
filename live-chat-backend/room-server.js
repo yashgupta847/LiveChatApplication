@@ -52,47 +52,51 @@ io.on("connection", (socket) => {
 
   // Join room
   socket.on("join-room", (data) => {
-    const { roomId, username } = data;
-    console.log(`User ${socket.id} trying to join room ${roomId}`);
-    
-    // Set username if provided
-    if (username) {
-      usernames.set(socket.id, username);
+    try {
+      const { roomId, username } = data;
+      console.log(`👋 User ${socket.id} trying to join room ${roomId}`);
+      
+      // Set username if provided
+      if (username) {
+        usernames.set(socket.id, username);
+      }
+      
+      // Leave previous room if any
+      if (socket.roomId) {
+        leaveRoom(socket);
+      }
+      
+      // Join new room
+      socket.join(roomId);
+      socket.roomId = roomId;
+      
+      // Add room to active rooms if not exists
+      if (!activeRooms.has(roomId)) {
+        activeRooms.set(roomId, new Set());
+      }
+      
+      // Add user to room
+      activeRooms.get(roomId).add(socket.id);
+      
+      // Get all usernames in this room
+      const usersInRoom = Array.from(activeRooms.get(roomId)).map(id => usernames.get(id) || "Anonymous");
+      
+      // Notify all room members including the new user
+      io.to(roomId).emit("user-joined", { 
+        roomId,
+        username: usernames.get(socket.id) || "Anonymous",
+        users: usersInRoom
+      });
+      
+      // Also send separate online users update to ensure it's received
+      io.to(roomId).emit("online_users", usersInRoom);
+      
+      console.log(`✅ User ${socket.id} joined room ${roomId}`);
+      console.log(`👥 Users in room ${roomId}: ${usersInRoom.join(', ')}`);
+      console.log(`🔑 Active rooms: ${Array.from(activeRooms.keys()).join(', ')}`);
+    } catch (error) {
+      console.error("Error in join-room:", error);
     }
-    
-    // Leave previous room if any
-    if (socket.roomId) {
-      leaveRoom(socket);
-    }
-    
-    // Join new room
-    socket.join(roomId);
-    socket.roomId = roomId;
-    
-    // Add room to active rooms if not exists
-    if (!activeRooms.has(roomId)) {
-      activeRooms.set(roomId, new Set());
-    }
-    
-    // Add user to room
-    activeRooms.get(roomId).add(socket.id);
-    
-    // Get all usernames in this room
-    const usersInRoom = Array.from(activeRooms.get(roomId)).map(id => usernames.get(id) || "Anonymous");
-    
-    // Notify room members
-    socket.to(roomId).emit("user-joined", { 
-      roomId,
-      username: usernames.get(socket.id) || "Anonymous",
-      users: usersInRoom
-    });
-    
-    // Send back room info and user list
-    socket.emit("online_users", usersInRoom);
-    
-    console.log(`User ${socket.id} joined room ${roomId}`);
-    console.log(`Active rooms: ${Array.from(activeRooms.keys()).join(', ')}`);
-    console.log(`Users in room ${roomId}: ${activeRooms.get(roomId).size}`);
   });
   
   // Leave room
@@ -103,15 +107,21 @@ io.on("connection", (socket) => {
   
   // Send message in room
   socket.on("send-message", (data) => {
-    const { message, roomId, username, time } = data;
-    
-    // Send to all in room except sender
-    socket.to(roomId).emit("receive-message", {
-      message,
-      senderId: socket.id,
-      username: username || usernames.get(socket.id) || "Anonymous",
-      time
-    });
+    try {
+      const { message, roomId, username, time } = data;
+      console.log(`💬 Message from ${username} in room ${roomId}: ${message}`);
+      
+      // Send to all in room including sender for consistency
+      io.to(roomId).emit("receive-message", {
+        message,
+        senderId: socket.id,
+        username: username || usernames.get(socket.id) || "Anonymous",
+        time,
+        isBroadcast: true
+      });
+    } catch (error) {
+      console.error("Error in send-message:", error);
+    }
   });
   
   // Handle typing
