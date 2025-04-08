@@ -1,0 +1,26 @@
+{
+  "name": "live-chat-application",
+  "version": "1.0.0",
+  "description": "A real-time chat application with private meeting rooms",
+  "main": "live-chat-backend/room-server.js",
+  "scripts": {
+    "start": "node live-chat-backend/room-server.js",
+    "dev": "nodemon live-chat-backend/room-server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "chat",
+    "real-time",
+    "socket.io"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+} 

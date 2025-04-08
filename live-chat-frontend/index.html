@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Chat App</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body onload="generateChatId()">
+    <div class="chat-container">
+      <h2>💬 Live Chat</h2>
+
+      <!-- Chat ID Section -->
+      <div id="chatIdSection" class="chat-id-section">
+        <h4>Your Chat ID: <span id="yourChatId"></span></h4>
+        <button onclick="copyChatId()" class="copy-btn">Copy Chat ID</button>
+      </div>
+
+      <!-- Join Chat Section -->
+      <div id="joinChatSection" class="join-chat-section">
+        <h4 class="section-title">Join a Chat</h4>
+        <div class="input-group-stack">
+          <input type="text" id="chatIdInput" placeholder="Enter Chat ID to connect..." />
+          <button onclick="joinChat()" class="join-btn">Join Chat</button>
+        </div>
+      </div>
+
+      <!-- 👥 Online Users Section -->
+      <div id="online-box">
+        <h4>🟢 Online Users</h4>
+        <ul id="onlineUsers"></ul>
+      </div>
+
+      <!-- Typing status -->
+      <div id="typingStatus" style="font-style: italic; color: gray"></div>
+
+      <!-- Chat Messages -->
+      <div id="messages"></div>
+
+      <!-- Message Input -->
+      <input type="text" id="messageInput" placeholder="Type your message..." />
+      <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
