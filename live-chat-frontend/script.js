@@ -1,4 +1,11 @@
-let socket = io.connect(window.location.origin);
+let socket = io.connect(window.location.origin, {
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    timeout: 20000,
+    transports: ['websocket', 'polling']
+});
 let currentChatId = null;
 let username = null;
 
@@ -13,11 +20,6 @@ let typingTimeout;
 // Initialize chat when page loads
 document.addEventListener('DOMContentLoaded', function() {
     console.log("DOM loaded, initializing chat application");
-    // First confirm the Socket.IO connection
-    if (!socket.connected) {
-        console.log("Socket not connected, attempting to connect...");
-        socket.connect();
-    }
     
     // Set up connection status handlers
     socket.on('connect', function() {
@@ -25,18 +27,59 @@ document.addEventListener('DOMContentLoaded', function() {
         showAlert("Connected to server!", "success");
         
         // Initialize after connection
-        generateChatId();
-        askUsername();
+        if (!currentChatId) {
+            generateChatId();
+            askUsername();
+        } else if (currentChatId && username) {
+            // Re-join room after reconnection
+            socket.emit('join-room', { roomId: currentChatId, username });
+            showAlert("Reconnected to chat!", "success");
+        }
     });
     
     socket.on('connect_error', function(error) {
         console.error("Connection error:", error);
         showAlert("Connection error: " + error.message, "error");
+        
+        // Attempt to reconnect after a delay
+        setTimeout(() => {
+            console.log("Attempting to reconnect...");
+            socket.connect();
+        }, 5000);
     });
     
-    socket.on('disconnect', function() {
-        console.log("Disconnected from server");
-        showAlert("Disconnected from server", "error");
+    socket.on('disconnect', function(reason) {
+        console.log("Disconnected from server. Reason:", reason);
+        showAlert("Disconnected from server. Trying to reconnect...", "error");
+        
+        if (reason === 'io server disconnect') {
+            // the disconnection was initiated by the server, reconnect manually
+            setTimeout(() => {
+                console.log("Attempting to reconnect after server disconnect...");
+                socket.connect();
+            }, 3000);
+        }
+        // else the socket will automatically try to reconnect
+    });
+    
+    socket.on('reconnect', function(attemptNumber) {
+        console.log("Reconnected to server after", attemptNumber, "attempts");
+        showAlert("Reconnected to chat!", "success");
+        
+        // Re-join room after reconnection
+        if (currentChatId && username) {
+            socket.emit('join-room', { roomId: currentChatId, username });
+        }
+    });
+    
+    socket.on('reconnect_error', function(error) {
+        console.error("Reconnection error:", error);
+        showAlert("Failed to reconnect: " + error.message, "error");
+    });
+    
+    socket.on('reconnect_failed', function() {
+        console.error("Failed to reconnect after multiple attempts");
+        showAlert("Failed to connect to server after multiple attempts. Please refresh the page.", "error");
     });
 });
 

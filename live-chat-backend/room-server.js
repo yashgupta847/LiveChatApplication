@@ -21,7 +21,12 @@ const io = new Server(server, {
   cors: {
     origin: process.env.CORS_ORIGIN || "*",
     methods: ["GET", "POST"],
+    credentials: true
   },
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ['websocket', 'polling'],
+  allowEIO3: true
 });
 
 // Store active rooms and their users
