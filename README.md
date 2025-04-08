@@ -28,4 +28,4 @@ A real-time chat application with private meeting rooms built with Socket.IO.
 1. Clone the repository
 2. Install dependencies: `npm install`
 3. Start the server: `npm start`
-4. Open `http://localhost:5000` in your browser 
+4. Open `(https://live-chat-application-ocaz.vercel.app/)` in your browser 
