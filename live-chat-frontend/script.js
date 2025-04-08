@@ -34,9 +34,9 @@
 
 // Connect with fallback to polling
 let socket = io(window.location.origin, {
-  transports: ['polling', 'websocket'],
-  upgrade: false
+  transports: ['websocket', 'polling'] // priority websocket first
 });
+
 
 let username = null;
 let currentChatId = null;
