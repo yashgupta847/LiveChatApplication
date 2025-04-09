@@ -1,205 +1,258 @@
-// Check WebSocket support before DOM loads
-(function checkWebSocketSupport() {
-  if (!window.WebSocket) {
-      console.warn("WebSockets not supported");
-      window.websocketsBlocked = true;
-      return;
-  }
-
-  try {
-      const testSocket = new WebSocket("wss://echo.websocket.events/");
-      let opened = false;
-
-      testSocket.onopen = () => {
-          opened = true;
-          testSocket.close();
-      };
-
-      testSocket.onerror = () => {
-          console.warn("WebSockets might be blocked");
-          window.websocketsBlocked = true;
-      };
-
-      setTimeout(() => {
-          if (!opened) {
-              console.warn("WebSocket test timed out");
-              window.websocketsBlocked = true;
-          }
-      }, 5000);
-  } catch (e) {
-      console.error("WebSocket error:", e);
-      window.websocketsBlocked = true;
-  }
-})();
-
-// Connect with fallback to polling
-let socket = io(window.location.origin, {
-  transports: ['websocket', 'polling'] // priority websocket first
-});
-
-
-let username = null;
-let currentChatId = null;
-
-document.addEventListener("DOMContentLoaded", () => {
-  if (window.websocketsBlocked) {
-      socket.io.opts.transports = ['polling'];
-  }
-
-  socket.on("connect", () => {
-      console.log("Connected:", socket.id);
-      showAlert("Connected!", "success");
-
-      if (!currentChatId) {
-          generateChatId();
-          askUsername();
-      } else {
-          socket.emit("join-room", { roomId: currentChatId, username });
-      }
-  });
-
-  socket.on("connect_error", () => {
-      showAlert("Connection error!", "error");
-      socket.io.opts.transports = ['polling'];
-  });
-
-  socket.on("disconnect", () => {
-      showAlert("Disconnected!", "error");
-  });
-
-  socket.on("reconnect", () => {
-      showAlert("Reconnected!", "success");
-      socket.emit("join-room", { roomId: currentChatId, username });
-  });
-
-  // Messaging logic
-  socket.on("receive-message", (data) => {
-      const isOwn = data.senderId === socket.id;
-      addMessageToUI(data.message, isOwn, data.username, data.time);
-  });
-
-  socket.on("user-joined", (data) => {
-      showAlert(`${data.username} joined`, "info");
-      addSystemMessage(`${data.username} joined the room`);
-      updateOnlineUsers(data.users);
-  });
-
-  socket.on("user-left", (data) => {
-      addSystemMessage(`${data.username} left`);
-      updateOnlineUsers(data.users);
-  });
-
-  socket.on("typing", (data) => {
-      if (data.username !== username) {
-          document.getElementById("typingStatus").textContent = `${data.username} is typing...`;
-      }
-  });
-
-  socket.on("stop_typing", (data) => {
-      if (data.username !== username) {
-          document.getElementById("typingStatus").textContent = ``;
-      }
-  });
-
-  socket.on("online_users", (users) => {
-      updateOnlineUsers(users);
-  });
-
-  document.getElementById("messageInput").addEventListener("keypress", (e) => {
-      if (e.key === "Enter") sendMessage();
-  });
-
-  document.getElementById("messageInput").addEventListener("input", () => {
-      socket.emit("typing", { username, roomId: currentChatId });
-      clearTimeout(window.typingTimeout);
-      window.typingTimeout = setTimeout(() => {
-          socket.emit("stop_typing", { username, roomId: currentChatId });
-      }, 1000);
-  });
-});
-
-function askUsername() {
-  username = prompt("Enter your name:") || "Anonymous";
-  socket.emit("set_username", { username, roomId: currentChatId });
+// Check WebSocket availability
+let isWebSocketAvailable = false;
+try {
+    const ws = new WebSocket('wss://echo.websocket.org');
+    ws.onopen = () => {
+        isWebSocketAvailable = true;
+        ws.close();
+    };
+    ws.onerror = () => {
+        isWebSocketAvailable = false;
+    };
+} catch (e) {
+    isWebSocketAvailable = false;
 }
 
+// Initialize socket with appropriate transport
+const socket = io.connect(window.location.origin, {
+    transports: ['polling', 'websocket'],
+    upgrade: false,
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    timeout: 20000,
+    forceNew: true
+});
+
+// DOM Elements
+const messageInput = document.getElementById("messageInput");
+const messagesDiv = document.getElementById("messages");
+const onlineUsersList = document.getElementById("onlineUsers");
+const typingStatus = document.getElementById("typingStatus");
+let currentUsername = "";
+let currentRoomId = "";
+
+// Connection status
+socket.on("connect", () => {
+    console.log("✅ Connected to server");
+    showAlert("Connected to server", "success");
+    // Clear any previous error messages
+    const errorAlerts = document.querySelectorAll('.alert-error');
+    errorAlerts.forEach(alert => alert.remove());
+});
+
+socket.on("disconnect", (reason) => {
+    console.log("❌ Disconnected from server:", reason);
+    if (reason === "io server disconnect") {
+        // Server initiated disconnect, try to reconnect
+        socket.connect();
+    }
+    showAlert("Disconnected from server", "error");
+});
+
+socket.on("connect_error", (error) => {
+    console.error("Connection error:", error);
+    if (error.message === "xhr poll error") {
+        showAlert("Connection error: Please check your internet connection", "error");
+    } else {
+        showAlert("Connection error: " + error.message, "error");
+    }
+});
+
+socket.on("error", (error) => {
+    console.error("Socket error:", error);
+    showAlert("Error: " + error, "error");
+});
+
+// Handle reconnection
+socket.on("reconnect", (attemptNumber) => {
+    console.log("✅ Reconnected after", attemptNumber, "attempts");
+    showAlert("Reconnected to server", "success");
+    
+    // Rejoin room if we were in one
+    if (currentRoomId) {
+        socket.emit("join-room", {
+            roomId: currentRoomId,
+            username: currentUsername
+        });
+    }
+});
+
+socket.on("reconnect_attempt", (attemptNumber) => {
+    console.log("Attempting to reconnect...", attemptNumber);
+    showAlert("Attempting to reconnect...", "info");
+});
+
+socket.on("reconnect_error", (error) => {
+    console.error("Reconnection error:", error);
+    showAlert("Failed to reconnect. Please refresh the page.", "error");
+});
+
+// Handle room history
+socket.on("room-history", (messages) => {
+    messages.forEach(msg => displayMessage(msg));
+});
+
+// Handle incoming messages
+socket.on("receive-message", (data) => {
+    displayMessage(data);
+    // Scroll to bottom
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+});
+
+// Handle online users updates
+socket.on("online_users", (users) => {
+    updateOnlineUsers(users);
+});
+
+// Handle typing indicators
+socket.on("typing", (data) => {
+    typingStatus.textContent = `${data.username} is typing...`;
+    typingStatus.style.display = "block";
+});
+
+socket.on("stop_typing", () => {
+    typingStatus.style.display = "none";
+});
+
+// Generate random chat ID
 function generateChatId() {
-  const id = Math.random().toString(36).substring(2, 8).toUpperCase();
-  currentChatId = id;
-  document.getElementById("yourChatId").textContent = id;
-  socket.emit("join-room", { roomId: id, username });
-  addSystemMessage(`Created room: ${id}`);
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let result = "";
+    for (let i = 0; i < 6; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
 }
 
+// Ask for username
+function askUsername() {
+    const username = prompt("Please enter your name:");
+    if (username) {
+        currentUsername = username;
+        const chatId = generateChatId();
+        currentRoomId = chatId;
+        document.getElementById("chatId").textContent = chatId;
+        showAlert("Your chat ID: " + chatId, "info");
+    } else {
+        askUsername();
+    }
+}
+
+// Join chat room
 function joinChat() {
-  const id = document.getElementById("chatIdInput").value.trim().toUpperCase();
-  if (!id) return showAlert("Enter a chat ID", "error");
-
-  if (currentChatId) {
-      socket.emit("leave-room", { roomId: currentChatId });
-  }
-
-  currentChatId = id;
-  document.getElementById("yourChatId").textContent = id;
-  socket.emit("join-room", { roomId: id, username });
-  document.getElementById("messages").innerHTML = '';
-  addSystemMessage(`Joined room: ${id}`);
+    const chatId = document.getElementById("joinChatId").value.toUpperCase();
+    if (chatId) {
+        socket.emit("join-room", {
+            roomId: chatId,
+            username: currentUsername
+        });
+        currentRoomId = chatId;
+        showAlert("Joined chat room: " + chatId, "success");
+    } else {
+        showAlert("Please enter a chat ID", "error");
+    }
 }
 
+// Send message
 function sendMessage() {
-  const input = document.getElementById("messageInput");
-  const msg = input.value.trim();
-  if (!msg || !currentChatId) return;
-
-  const messageData = {
-      message: msg,
-      username,
-      senderId: socket.id,
-      roomId: currentChatId,
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-  };
-
-  socket.emit("send-message", messageData);
-  input.value = "";
+    const message = messageInput.value.trim();
+    if (message && currentRoomId) {
+        const messageData = {
+            message,
+            roomId: currentRoomId,
+            username: currentUsername,
+            time: new Date().toLocaleTimeString()
+        };
+        socket.emit("send-message", messageData);
+        messageInput.value = "";
+    }
 }
 
-function addMessageToUI(message, isOwn, user, time) {
-  const div = document.createElement("div");
-  div.className = isOwn ? "message own-message" : "message other-message";
-  div.innerHTML = `
-      <span class="message-sender">${isOwn ? "You" : user}</span>
-      <span class="message-content">${message}</span>
-      <span class="message-time">${time}</span>
-  `;
-  document.getElementById("messages").appendChild(div);
-  document.getElementById("messages").scrollTop = messages.scrollHeight;
+// Display message in chat
+function displayMessage(data) {
+    const messageDiv = document.createElement("div");
+    messageDiv.className = `message ${data.type === "system" ? "system" : data.username === currentUsername ? "sent" : "received"}`;
+    
+    const messageContent = document.createElement("div");
+    messageContent.className = "message-content";
+    
+    if (data.type !== "system") {
+        const usernameSpan = document.createElement("span");
+        usernameSpan.className = "message-username";
+        usernameSpan.textContent = data.username;
+        messageContent.appendChild(usernameSpan);
+    }
+    
+    const messageText = document.createElement("p");
+    messageText.className = "message-text";
+    messageText.textContent = data.message;
+    messageContent.appendChild(messageText);
+    
+    const timeSpan = document.createElement("span");
+    timeSpan.className = "message-time";
+    timeSpan.textContent = data.time;
+    messageContent.appendChild(timeSpan);
+    
+    messageDiv.appendChild(messageContent);
+    messagesDiv.appendChild(messageDiv);
 }
 
-function addSystemMessage(msg) {
-  const div = document.createElement("div");
-  div.className = "system-message";
-  div.textContent = msg;
-  document.getElementById("messages").appendChild(div);
-  document.getElementById("messages").scrollTop = messages.scrollHeight;
-}
-
-function showAlert(message, type = "info") {
-  const div = document.createElement("div");
-  div.className = `alert-box ${type}`;
-  div.textContent = message;
-  document.body.appendChild(div);
-  setTimeout(() => {
-      div.classList.add("fade-out");
-      setTimeout(() => div.remove(), 500);
-  }, 3000);
-}
-
+// Update online users list
 function updateOnlineUsers(users) {
-  const list = document.getElementById("onlineUsers");
-  list.innerHTML = "";
-  users.forEach((user) => {
-      const li = document.createElement("li");
-      li.textContent = `🟢 ${user}`;
-      list.appendChild(li);
-  });
+    onlineUsersList.innerHTML = "";
+    users.forEach(user => {
+        const li = document.createElement("li");
+        li.textContent = user;
+        onlineUsersList.appendChild(li);
+    });
+}
+
+// Show alert
+function showAlert(message, type = "info") {
+    const alertDiv = document.createElement("div");
+    alertDiv.className = `alert alert-${type}`;
+    alertDiv.textContent = message;
+    document.body.appendChild(alertDiv);
+    
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 3000);
+}
+
+// Handle typing indicator
+let typingTimeout;
+messageInput.addEventListener("input", () => {
+    if (currentRoomId) {
+        socket.emit("typing", {
+            roomId: currentRoomId,
+            username: currentUsername
+        });
+        
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => {
+            socket.emit("stop_typing", {
+                roomId: currentRoomId,
+                username: currentUsername
+            });
+        }, 1000);
+    }
+});
+
+// Handle enter key for sending messages
+messageInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+        sendMessage();
+    }
+});
+
+// Copy chat ID to clipboard
+function copyChatId() {
+    const chatId = document.getElementById("chatId").textContent;
+    navigator.clipboard.writeText(chatId).then(() => {
+        showAlert("Chat ID copied to clipboard!", "success");
+    }).catch(() => {
+        showAlert("Failed to copy chat ID", "error");
+    });
 }
