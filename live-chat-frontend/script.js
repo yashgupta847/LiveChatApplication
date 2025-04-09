@@ -13,16 +13,18 @@ try {
     isWebSocketAvailable = false;
 }
 
-// Initialize socket with appropriate transport
+// Initialize socket with more robust settings
 const socket = io.connect(window.location.origin, {
     transports: ['polling', 'websocket'],
     upgrade: false,
     reconnection: true,
-    reconnectionAttempts: 5,
+    reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
     timeout: 20000,
-    forceNew: true
+    forceNew: true,
+    path: "/socket.io/",
+    autoConnect: true
 });
 
 // DOM Elements
@@ -47,14 +49,22 @@ socket.on("disconnect", (reason) => {
     if (reason === "io server disconnect") {
         // Server initiated disconnect, try to reconnect
         socket.connect();
+    } else if (reason === "transport close") {
+        // Connection lost, try to reconnect
+        setTimeout(() => {
+            socket.connect();
+        }, 1000);
     }
-    showAlert("Disconnected from server", "error");
+    showAlert("Disconnected from server. Attempting to reconnect...", "error");
 });
 
 socket.on("connect_error", (error) => {
     console.error("Connection error:", error);
     if (error.message === "xhr poll error") {
-        showAlert("Connection error: Please check your internet connection", "error");
+        // Try to reconnect with different transport
+        socket.io.opts.transports = ['polling'];
+        socket.connect();
+        showAlert("Connection error: Switching to polling mode...", "warning");
     } else {
         showAlert("Connection error: " + error.message, "error");
     }
@@ -81,11 +91,16 @@ socket.on("reconnect", (attemptNumber) => {
 
 socket.on("reconnect_attempt", (attemptNumber) => {
     console.log("Attempting to reconnect...", attemptNumber);
-    showAlert("Attempting to reconnect...", "info");
+    showAlert("Attempting to reconnect... (Attempt " + attemptNumber + ")", "info");
 });
 
 socket.on("reconnect_error", (error) => {
     console.error("Reconnection error:", error);
+    showAlert("Failed to reconnect. Please check your internet connection.", "error");
+});
+
+socket.on("reconnect_failed", () => {
+    console.error("Reconnection failed");
     showAlert("Failed to reconnect. Please refresh the page.", "error");
 });
 

@@ -7,20 +7,32 @@ const app = express();
 app.use(cors());
 
 const server = http.createServer(app);
+
+// Configure Socket.IO with more lenient settings
 const io = new Server(server, {
     cors: {
         origin: "*",
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST"],
+        credentials: true
     },
     transports: ['polling', 'websocket'],
     allowEIO3: true,
     pingTimeout: 60000,
-    pingInterval: 25000
+    pingInterval: 25000,
+    connectTimeout: 45000,
+    maxHttpBufferSize: 1e8,
+    path: "/socket.io/",
+    serveClient: false
 });
 
 // Store active rooms and their messages
 const roomUsers = {};
 const roomMessages = {};
+
+// Handle connection errors at the server level
+io.engine.on("connection_error", (err) => {
+    console.log("Connection error:", err.req, err.code, err.message, err.context);
+});
 
 io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
