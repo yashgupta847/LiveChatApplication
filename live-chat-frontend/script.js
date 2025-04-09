@@ -13,18 +13,11 @@ try {
     isWebSocketAvailable = false;
 }
 
-// Initialize socket with more robust settings
-const socket = io.connect(window.location.origin, {
-    transports: ['polling', 'websocket'],
-    upgrade: false,
+// Initialize socket with basic configuration
+const socket = io({
     reconnection: true,
-    reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000,
-    timeout: 20000,
-    forceNew: true,
-    path: "/socket.io/",
-    autoConnect: true
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000
 });
 
 // DOM Elements
@@ -44,64 +37,14 @@ socket.on("connect", () => {
     errorAlerts.forEach(alert => alert.remove());
 });
 
-socket.on("disconnect", (reason) => {
-    console.log("❌ Disconnected from server:", reason);
-    if (reason === "io server disconnect") {
-        // Server initiated disconnect, try to reconnect
-        socket.connect();
-    } else if (reason === "transport close") {
-        // Connection lost, try to reconnect
-        setTimeout(() => {
-            socket.connect();
-        }, 1000);
-    }
-    showAlert("Disconnected from server. Attempting to reconnect...", "error");
+socket.on("disconnect", () => {
+    console.log("❌ Disconnected from server");
+    showAlert("Disconnected from server", "error");
 });
 
 socket.on("connect_error", (error) => {
     console.error("Connection error:", error);
-    if (error.message === "xhr poll error") {
-        // Try to reconnect with different transport
-        socket.io.opts.transports = ['polling'];
-        socket.connect();
-        showAlert("Connection error: Switching to polling mode...", "warning");
-    } else {
-        showAlert("Connection error: " + error.message, "error");
-    }
-});
-
-socket.on("error", (error) => {
-    console.error("Socket error:", error);
-    showAlert("Error: " + error, "error");
-});
-
-// Handle reconnection
-socket.on("reconnect", (attemptNumber) => {
-    console.log("✅ Reconnected after", attemptNumber, "attempts");
-    showAlert("Reconnected to server", "success");
-    
-    // Rejoin room if we were in one
-    if (currentRoomId) {
-        socket.emit("join-room", {
-            roomId: currentRoomId,
-            username: currentUsername
-        });
-    }
-});
-
-socket.on("reconnect_attempt", (attemptNumber) => {
-    console.log("Attempting to reconnect...", attemptNumber);
-    showAlert("Attempting to reconnect... (Attempt " + attemptNumber + ")", "info");
-});
-
-socket.on("reconnect_error", (error) => {
-    console.error("Reconnection error:", error);
-    showAlert("Failed to reconnect. Please check your internet connection.", "error");
-});
-
-socket.on("reconnect_failed", () => {
-    console.error("Reconnection failed");
-    showAlert("Failed to reconnect. Please refresh the page.", "error");
+    showAlert("Connection error: " + error.message, "error");
 });
 
 // Handle room history

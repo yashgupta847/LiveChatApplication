@@ -6,7 +6,7 @@
     <title>Live Chat App</title>
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body onload="generateChatId()">
+  <body onload="askUsername()">
     <div class="chat-container">
       <h2>💬 Live Chat</h2>
 
@@ -42,6 +42,7 @@
       <button onclick="sendMessage()">Send</button>
     </div>
 
+    <!-- Load Socket.IO client -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="script.js"></script>
   </body>
